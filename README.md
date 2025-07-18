@@ -1,5 +1,4 @@
-# ev-adoption-forecast
-project of Electric Vehicle (EV) internship focused on forecasting EV adoption using historical vehicle registration data.
+
 # 🚗 EV Adoption Forecasting ( Internship Project)
 
 This project is part of the **Electric Vehicle (EV) Internship**. The goal is to analyze electric vehicle registration trends and build a forecasting model to predict future EV adoption based on historical data.
