@@ -117,7 +117,7 @@ st.markdown("""
 # === Main Title with Lightning Icon ===
 st.markdown("""
     <div class='main-title'>
-        ⚡ EV Adoption Forecaster for a County in Washington State
+        ⚡ EV Adoption Forecaster for a Country in Washington State
     </div>
 """, unsafe_allow_html=True)
 
