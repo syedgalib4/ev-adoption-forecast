@@ -1,561 +1,361 @@
-{
-  "nbformat": 4,
-  "nbformat_minor": 0,
-  "metadata": {
-    "colab": {
-      "provenance": [],
-      "authorship_tag": "ABX9TyN51r2NrwfxtV8wDej8tAAa",
-      "include_colab_link": true
-    },
-    "kernelspec": {
-      "name": "python3",
-      "display_name": "Python 3"
-    },
-    "language_info": {
-      "name": "python"
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+from datetime import datetime
+import matplotlib.pyplot as plt
+
+st.set_page_config(page_title="EV Forecast", layout="wide")
+
+# === Load model ===
+model = joblib.load('forecasting_ev_model.pkl')
+
+# === Enhanced Styling ===
+st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        .stApp {
+            background: linear-gradient(135deg, #ebfdfc 0%, #f9fcf8 25%, #59d0f1 50%, #c9eaef 75%, #7ddcf7 100%);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .main-title {
+            text-align: center;
+            font-size: 36px;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin: 20px 0;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 22px;
+            font-weight: 400;
+            color: #FFFFFF;
+            margin-bottom: 25px;
+            padding-top: 10px;
+        }
+
+        .section-header {
+            text-align: left;
+            font-size: 22px;
+            font-weight: 600;
+            color: #000000;
+            padding-top: 10px;
+        }
+
+        .lightning-icon {
+            font-size: 36px;
+            color: #FFD700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .metric-card {
+            background: rgba(235, 253, 252, 0.8);
+            backdrop-filter: blur(8px);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            border: 1px solid rgba(89, 208, 241, 0.3);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+
+        .stSelectbox > div > div {
+            background-color: rgba(249, 252, 248, 0.9);
+            border-radius: 8px;
+            border: 2px solid rgba(89, 208, 241, 0.4);
+        }
+
+        .stMultiSelect > div > div {
+            background-color: rgba(249, 252, 248, 0.9);
+            border-radius: 8px;
+            border: 2px solid rgba(89, 208, 241, 0.4);
+        }
+
+        .forecast-result {
+            background: linear-gradient(135deg, rgba(235, 253, 252, 0.9), rgba(201, 234, 239, 0.8));
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #59d0f1;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+
+        .comparison-section {
+            background: rgba(235, 253, 252, 0.6);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 25px 0;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(125, 220, 247, 0.3);
+        }
+
+        .footer-text {
+            text-align: center;
+            font-size: 16px;
+            font-weight: 500;
+            color: #2c5282;
+            margin-top: 30px;
+            padding: 15px;
+            background: rgba(235, 253, 252, 0.8);
+            border-radius: 8px;
+            border: 1px solid rgba(89, 208, 241, 0.3);
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# === Main Title with Lightning Icon ===
+st.markdown("""
+    <div class='main-title'>
+        ⚡ EV Adoption Forecaster for a County in Washington State
+    </div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+    <div class='subtitle'>
+        Welcome to the Electric Vehicle (EV) Adoption Forecast tool.
+    </div>
+""", unsafe_allow_html=True)
+
+# === Hero Image ===
+st.image("ev-car-factory.jpg", use_container_width=True)
+
+st.markdown("""
+    <div class='section-header'>
+        Select a county and see the forecasted EV adoption trend for the next 3 years.
+    </div>
+""", unsafe_allow_html=True)
+
+@st.cache_data
+def load_data():
+    df = pd.read_csv("preprocessed_ev_data.csv")
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
+df = load_data()
+
+county_list = sorted(df['County'].dropna().unique().tolist())
+county = st.selectbox("Select a County", county_list)
+
+if county not in df['County'].unique():
+    st.warning(f"County '{county}' not found in dataset.")
+    st.stop()
+
+# === Forecast Calculation ===
+county_df = df[df['County'] == county].sort_values("Date")
+county_code = county_df['county_encoded'].iloc[0]
+
+historical_ev = list(county_df['Electric Vehicle (EV) Total'].values[-6:])
+cumulative_ev = list(np.cumsum(historical_ev))
+months_since_start = county_df['months_since_start'].max()
+latest_date = county_df['Date'].max()
+
+future_rows = []
+forecast_horizon = 36
+
+for i in range(1, forecast_horizon + 1):
+    forecast_date = latest_date + pd.DateOffset(months=i)
+    months_since_start += 1
+    lag1, lag2, lag3 = historical_ev[-1], historical_ev[-2], historical_ev[-3]
+    roll_mean = np.mean([lag1, lag2, lag3])
+    pct_change_1 = (lag1 - lag2) / lag2 if lag2 != 0 else 0
+    pct_change_3 = (lag1 - lag3) / lag3 if lag3 != 0 else 0
+    recent_cumulative = cumulative_ev[-6:]
+    ev_growth_slope = np.polyfit(range(len(recent_cumulative)), recent_cumulative, 1)[0] if len(recent_cumulative) == 6 else 0
+
+    new_row = {
+        'months_since_start': months_since_start,
+        'county_encoded': county_code,
+        'ev_total_lag1': lag1,
+        'ev_total_lag2': lag2,
+        'ev_total_lag3': lag3,
+        'ev_total_roll_mean_3': roll_mean,
+        'ev_total_pct_change_1': pct_change_1,
+        'ev_total_pct_change_3': pct_change_3,
+        'ev_growth_slope': ev_growth_slope
     }
-  },
-  "cells": [
-    {
-      "cell_type": "markdown",
-      "metadata": {
-        "id": "view-in-github",
-        "colab_type": "text"
-      },
-      "source": [
-        "<a href=\"https://colab.research.google.com/github/syedgalib4/ev-adoption-forecast/blob/main/app.py\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
-      ]
-    },
-    {
-      "cell_type": "code",
-      "execution_count": 46,
-      "metadata": {
-        "id": "P9FbaMvORjlc"
-      },
-      "outputs": [],
-      "source": [
-        "!pip install streamlit pyngrok --quiet\n"
-      ]
-    },
-    {
-      "cell_type": "code",
-      "source": [
-        "\n",
-        "import streamlit as st\n",
-        "import pandas as pd\n",
-        "import numpy as np\n",
-        "import joblib\n",
-        "from datetime import datetime\n",
-        "import matplotlib.pyplot as plt\n",
-        "\n",
-        "st.set_page_config(page_title=\"EV Forecast\", layout=\"wide\")\n",
-        "\n",
-        "# === Load model ===\n",
-        "model = joblib.load('forecasting_ev_model.pkl')\n",
-        "\n",
-        "# === Enhanced Styling ===\n",
-        "st.markdown(\"\"\"\n",
-        "    <style>\n",
-        "        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');\n",
-        "\n",
-        "        .stApp {\n",
-        "            background: linear-gradient(135deg, #ebfdfc 0%, #f9fcf8 25%, #59d0f1 50%, #c9eaef 75%, #7ddcf7 100%);\n",
-        "            font-family: 'Inter', sans-serif;\n",
-        "        }\n",
-        "\n",
-        "        .main-title {\n",
-        "            text-align: center;\n",
-        "            font-size: 36px;\n",
-        "            font-weight: 700;\n",
-        "            color: #FFFFFF;\n",
-        "            margin: 20px 0;\n",
-        "            text-shadow: 0 2px 4px rgba(0,0,0,0.3);\n",
-        "        }\n",
-        "\n",
-        "        .subtitle {\n",
-        "            text-align: center;\n",
-        "            font-size: 22px;\n",
-        "            font-weight: 400;\n",
-        "            color: #FFFFFF;\n",
-        "            margin-bottom: 25px;\n",
-        "            padding-top: 10px;\n",
-        "        }\n",
-        "\n",
-        "        .section-header {\n",
-        "            text-align: left;\n",
-        "            font-size: 22px;\n",
-        "            font-weight: 600;\n",
-        "            color: #000000;\n",
-        "            padding-top: 10px;\n",
-        "        }\n",
-        "\n",
-        "        .lightning-icon {\n",
-        "            font-size: 36px;\n",
-        "            color: #FFD700;\n",
-        "            text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);\n",
-        "            animation: pulse 2s infinite;\n",
-        "        }\n",
-        "\n",
-        "        @keyframes pulse {\n",
-        "            0% { transform: scale(1); }\n",
-        "            50% { transform: scale(1.1); }\n",
-        "            100% { transform: scale(1); }\n",
-        "        }\n",
-        "\n",
-        "        .metric-card {\n",
-        "            background: rgba(235, 253, 252, 0.8);\n",
-        "            backdrop-filter: blur(8px);\n",
-        "            border-radius: 10px;\n",
-        "            padding: 20px;\n",
-        "            margin: 15px 0;\n",
-        "            border: 1px solid rgba(89, 208, 241, 0.3);\n",
-        "            box-shadow: 0 4px 16px rgba(0,0,0,0.1);\n",
-        "        }\n",
-        "\n",
-        "        .stSelectbox > div > div {\n",
-        "            background-color: rgba(249, 252, 248, 0.9);\n",
-        "            border-radius: 8px;\n",
-        "            border: 2px solid rgba(89, 208, 241, 0.4);\n",
-        "        }\n",
-        "\n",
-        "        .stMultiSelect > div > div {\n",
-        "            background-color: rgba(249, 252, 248, 0.9);\n",
-        "            border-radius: 8px;\n",
-        "            border: 2px solid rgba(89, 208, 241, 0.4);\n",
-        "        }\n",
-        "\n",
-        "        .forecast-result {\n",
-        "            background: linear-gradient(135deg, rgba(235, 253, 252, 0.9), rgba(201, 234, 239, 0.8));\n",
-        "            border-radius: 12px;\n",
-        "            padding: 20px;\n",
-        "            margin: 20px 0;\n",
-        "            border-left: 4px solid #59d0f1;\n",
-        "            box-shadow: 0 4px 16px rgba(0,0,0,0.1);\n",
-        "        }\n",
-        "\n",
-        "        .comparison-section {\n",
-        "            background: rgba(235, 253, 252, 0.6);\n",
-        "            border-radius: 15px;\n",
-        "            padding: 25px;\n",
-        "            margin: 25px 0;\n",
-        "            backdrop-filter: blur(5px);\n",
-        "            border: 1px solid rgba(125, 220, 247, 0.3);\n",
-        "        }\n",
-        "\n",
-        "        .footer-text {\n",
-        "            text-align: center;\n",
-        "            font-size: 16px;\n",
-        "            font-weight: 500;\n",
-        "            color: #2c5282;\n",
-        "            margin-top: 30px;\n",
-        "            padding: 15px;\n",
-        "            background: rgba(235, 253, 252, 0.8);\n",
-        "            border-radius: 8px;\n",
-        "            border: 1px solid rgba(89, 208, 241, 0.3);\n",
-        "        }\n",
-        "    </style>\n",
-        "\"\"\", unsafe_allow_html=True)\n",
-        "\n",
-        "# === Main Title with Lightning Icon ===\n",
-        "st.markdown(\"\"\"\n",
-        "    <div class='main-title'>\n",
-        "        ⚡ EV Adoption Forecaster for a County in Washington State\n",
-        "    </div>\n",
-        "\"\"\", unsafe_allow_html=True)\n",
-        "\n",
-        "st.markdown(\"\"\"\n",
-        "    <div class='subtitle'>\n",
-        "        Welcome to the Electric Vehicle (EV) Adoption Forecast tool.\n",
-        "    </div>\n",
-        "\"\"\", unsafe_allow_html=True)\n",
-        "\n",
-        "# === Hero Image ===\n",
-        "st.image(\"ev-car-factory.jpg\", use_container_width=True)\n",
-        "\n",
-        "st.markdown(\"\"\"\n",
-        "    <div class='section-header'>\n",
-        "        Select a county and see the forecasted EV adoption trend for the next 3 years.\n",
-        "    </div>\n",
-        "\"\"\", unsafe_allow_html=True)\n",
-        "\n",
-        "@st.cache_data\n",
-        "def load_data():\n",
-        "    df = pd.read_csv(\"preprocessed_ev_data.csv\")\n",
-        "    df['Date'] = pd.to_datetime(df['Date'])\n",
-        "    return df\n",
-        "\n",
-        "df = load_data()\n",
-        "\n",
-        "county_list = sorted(df['County'].dropna().unique().tolist())\n",
-        "county = st.selectbox(\"Select a County\", county_list)\n",
-        "\n",
-        "if county not in df['County'].unique():\n",
-        "    st.warning(f\"County '{county}' not found in dataset.\")\n",
-        "    st.stop()\n",
-        "\n",
-        "# === Forecast Calculation ===\n",
-        "county_df = df[df['County'] == county].sort_values(\"Date\")\n",
-        "county_code = county_df['county_encoded'].iloc[0]\n",
-        "\n",
-        "historical_ev = list(county_df['Electric Vehicle (EV) Total'].values[-6:])\n",
-        "cumulative_ev = list(np.cumsum(historical_ev))\n",
-        "months_since_start = county_df['months_since_start'].max()\n",
-        "latest_date = county_df['Date'].max()\n",
-        "\n",
-        "future_rows = []\n",
-        "forecast_horizon = 36\n",
-        "\n",
-        "for i in range(1, forecast_horizon + 1):\n",
-        "    forecast_date = latest_date + pd.DateOffset(months=i)\n",
-        "    months_since_start += 1\n",
-        "    lag1, lag2, lag3 = historical_ev[-1], historical_ev[-2], historical_ev[-3]\n",
-        "    roll_mean = np.mean([lag1, lag2, lag3])\n",
-        "    pct_change_1 = (lag1 - lag2) / lag2 if lag2 != 0 else 0\n",
-        "    pct_change_3 = (lag1 - lag3) / lag3 if lag3 != 0 else 0\n",
-        "    recent_cumulative = cumulative_ev[-6:]\n",
-        "    ev_growth_slope = np.polyfit(range(len(recent_cumulative)), recent_cumulative, 1)[0] if len(recent_cumulative) == 6 else 0\n",
-        "\n",
-        "    new_row = {\n",
-        "        'months_since_start': months_since_start,\n",
-        "        'county_encoded': county_code,\n",
-        "        'ev_total_lag1': lag1,\n",
-        "        'ev_total_lag2': lag2,\n",
-        "        'ev_total_lag3': lag3,\n",
-        "        'ev_total_roll_mean_3': roll_mean,\n",
-        "        'ev_total_pct_change_1': pct_change_1,\n",
-        "        'ev_total_pct_change_3': pct_change_3,\n",
-        "        'ev_growth_slope': ev_growth_slope\n",
-        "    }\n",
-        "\n",
-        "    pred = model.predict(pd.DataFrame([new_row]))[0]\n",
-        "    future_rows.append({\"Date\": forecast_date, \"Predicted EV Total\": round(pred)})\n",
-        "\n",
-        "    historical_ev.append(pred)\n",
-        "    if len(historical_ev) > 6:\n",
-        "        historical_ev.pop(0)\n",
-        "\n",
-        "    cumulative_ev.append(cumulative_ev[-1] + pred)\n",
-        "    if len(cumulative_ev) > 6:\n",
-        "        cumulative_ev.pop(0)\n",
-        "\n",
-        "# === Data Preparation for Visualization ===\n",
-        "historical_cum = county_df[['Date', 'Electric Vehicle (EV) Total']].copy()\n",
-        "historical_cum['Source'] = 'Historical'\n",
-        "historical_cum['Cumulative EV'] = historical_cum['Electric Vehicle (EV) Total'].cumsum()\n",
-        "\n",
-        "forecast_df = pd.DataFrame(future_rows)\n",
-        "forecast_df['Source'] = 'Forecast'\n",
-        "forecast_df['Cumulative EV'] = forecast_df['Predicted EV Total'].cumsum() + historical_cum['Cumulative EV'].iloc[-1]\n",
-        "\n",
-        "combined = pd.concat([\n",
-        "    historical_cum[['Date', 'Cumulative EV', 'Source']],\n",
-        "    forecast_df[['Date', 'Cumulative EV', 'Source']]\n",
-        "], ignore_index=True)\n",
-        "\n",
-        "# === Enhanced Visualization ===\n",
-        "st.subheader(f\"📊 Cumulative EV Forecast for {county} County\")\n",
-        "\n",
-        "fig, ax = plt.subplots(figsize=(12, 6))\n",
-        "colors = {'Historical': '#FFD700', 'Forecast': '#FF6B6B'}\n",
-        "linewidths = {'Historical': 2, 'Forecast': 2}\n",
-        "linestyles = {'Historical': '-', 'Forecast': '--'}\n",
-        "\n",
-        "for label, data in combined.groupby('Source'):\n",
-        "    ax.plot(data['Date'], data['Cumulative EV'],\n",
-        "           label=label,\n",
-        "           color=colors[label],\n",
-        "           linewidth=linewidths[label],\n",
-        "           linestyle=linestyles[label],\n",
-        "           marker='o',\n",
-        "           markersize=4)\n",
-        "\n",
-        "ax.set_title(f\"Cumulative EV Trend - {county} (3 Years Forecast)\", fontsize=14, color='#2c5282')\n",
-        "ax.set_xlabel(\"Date\", color='#2c5282')\n",
-        "ax.set_ylabel(\"Cumulative EV Count\", color='#2c5282')\n",
-        "ax.grid(True, alpha=0.3)\n",
-        "ax.set_facecolor(\"#1c1c1c\")\n",
-        "fig.patch.set_facecolor('#2c3e50')\n",
-        "ax.tick_params(colors='white')\n",
-        "ax.legend()\n",
-        "\n",
-        "st.pyplot(fig)\n",
-        "\n",
-        "# === Results Display ===\n",
-        "historical_total = historical_cum['Cumulative EV'].iloc[-1]\n",
-        "forecasted_total = forecast_df['Cumulative EV'].iloc[-1]\n",
-        "\n",
-        "if historical_total > 0:\n",
-        "    forecast_growth_pct = ((forecasted_total - historical_total) / historical_total) * 100\n",
-        "    trend = \"increase 📈\" if forecast_growth_pct > 0 else \"decrease 📉\"\n",
-        "    st.success(f\"Based on the graph, EV adoption in **{county}** is expected to show a **{trend} of {forecast_growth_pct:.2f}%** over the next 3 years.\")\n",
-        "else:\n",
-        "    st.warning(\"Historical EV total is zero, so percentage forecast change can't be computed.\")\n",
-        "\n",
-        "# === Comparison Section ===\n",
-        "st.markdown(\"---\")\n",
-        "st.header(\"Compare EV Adoption Trends for up to 3 Counties\")\n",
-        "\n",
-        "multi_counties = st.multiselect(\"Select up to 3 counties to compare\", county_list, max_selections=3)\n",
-        "\n",
-        "if multi_counties:\n",
-        "    comparison_data = []\n",
-        "\n",
-        "    for cty in multi_counties:\n",
-        "        cty_df = df[df['County'] == cty].sort_values(\"Date\")\n",
-        "        cty_code = cty_df['county_encoded'].iloc[0]\n",
-        "\n",
-        "        hist_ev = list(cty_df['Electric Vehicle (EV) Total'].values[-6:])\n",
-        "        cum_ev = list(np.cumsum(hist_ev))\n",
-        "        months_since = cty_df['months_since_start'].max()\n",
-        "        last_date = cty_df['Date'].max()\n",
-        "\n",
-        "        future_rows_cty = []\n",
-        "        for i in range(1, forecast_horizon + 1):\n",
-        "            forecast_date = last_date + pd.DateOffset(months=i)\n",
-        "            months_since += 1\n",
-        "            lag1, lag2, lag3 = hist_ev[-1], hist_ev[-2], hist_ev[-3]\n",
-        "            roll_mean = np.mean([lag1, lag2, lag3])\n",
-        "            pct_change_1 = (lag1 - lag2) / lag2 if lag2 != 0 else 0\n",
-        "            pct_change_3 = (lag1 - lag3) / lag3 if lag3 != 0 else 0\n",
-        "            recent_cum = cum_ev[-6:]\n",
-        "            ev_slope = np.polyfit(range(len(recent_cum)), recent_cum, 1)[0] if len(recent_cum) == 6 else 0\n",
-        "\n",
-        "            new_row = {\n",
-        "                'months_since_start': months_since,\n",
-        "                'county_encoded': cty_code,\n",
-        "                'ev_total_lag1': lag1,\n",
-        "                'ev_total_lag2': lag2,\n",
-        "                'ev_total_lag3': lag3,\n",
-        "                'ev_total_roll_mean_3': roll_mean,\n",
-        "                'ev_total_pct_change_1': pct_change_1,\n",
-        "                'ev_total_pct_change_3': pct_change_3,\n",
-        "                'ev_growth_slope': ev_slope\n",
-        "            }\n",
-        "            pred = model.predict(pd.DataFrame([new_row]))[0]\n",
-        "            future_rows_cty.append({\"Date\": forecast_date, \"Predicted EV Total\": round(pred)})\n",
-        "\n",
-        "            hist_ev.append(pred)\n",
-        "            if len(hist_ev) > 6:\n",
-        "                hist_ev.pop(0)\n",
-        "\n",
-        "            cum_ev.append(cum_ev[-1] + pred)\n",
-        "            if len(cum_ev) > 6:\n",
-        "                cum_ev.pop(0)\n",
-        "\n",
-        "        hist_cum = cty_df[['Date', 'Electric Vehicle (EV) Total']].copy()\n",
-        "        hist_cum['Cumulative EV'] = hist_cum['Electric Vehicle (EV) Total'].cumsum()\n",
-        "\n",
-        "        fc_df = pd.DataFrame(future_rows_cty)\n",
-        "        fc_df['Cumulative EV'] = fc_df['Predicted EV Total'].cumsum() + hist_cum['Cumulative EV'].iloc[-1]\n",
-        "\n",
-        "        combined_cty = pd.concat([\n",
-        "            hist_cum[['Date', 'Cumulative EV']],\n",
-        "            fc_df[['Date', 'Cumulative EV']]\n",
-        "        ], ignore_index=True)\n",
-        "\n",
-        "        combined_cty['County'] = cty\n",
-        "        comparison_data.append(combined_cty)\n",
-        "\n",
-        "    comp_df = pd.concat(comparison_data, ignore_index=True)\n",
-        "\n",
-        "    # === Enhanced Comparison Visualization ===\n",
-        "    st.subheader(\"📈 Comparison of Cumulative EV Adoption Trends\")\n",
-        "    fig, ax = plt.subplots(figsize=(14, 7))\n",
-        "    colors_list = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']\n",
-        "\n",
-        "    for i, (cty, group) in enumerate(comp_df.groupby('County')):\n",
-        "        color = colors_list[i % len(colors_list)]\n",
-        "        ax.plot(group['Date'], group['Cumulative EV'],\n",
-        "               marker='o',\n",
-        "               label=cty,\n",
-        "               linewidth=2,\n",
-        "               markersize=4,\n",
-        "               color=color)\n",
-        "\n",
-        "    ax.set_title(\"EV Adoption Trends: Historical + 3-Year Forecast\", fontsize=16, color='white')\n",
-        "    ax.set_xlabel(\"Date\", color='white')\n",
-        "    ax.set_ylabel(\"Cumulative EV Count\", color='white')\n",
-        "    ax.grid(True, alpha=0.3)\n",
-        "    ax.set_facecolor(\"#1c1c1c\")\n",
-        "    fig.patch.set_facecolor('#2c3e50')\n",
-        "    ax.tick_params(colors='white')\n",
-        "    ax.legend(title=\"County\")\n",
-        "    st.pyplot(fig)\n",
-        "\n",
-        "    # === Growth Summary ===\n",
-        "    growth_summaries = []\n",
-        "    for cty in multi_counties:\n",
-        "        cty_df = comp_df[comp_df['County'] == cty].reset_index(drop=True)\n",
-        "        historical_total = cty_df['Cumulative EV'].iloc[len(cty_df) - forecast_horizon - 1]\n",
-        "        forecasted_total = cty_df['Cumulative EV'].iloc[-1]\n",
-        "\n",
-        "        if historical_total > 0:\n",
-        "            growth_pct = ((forecasted_total - historical_total) / historical_total) * 100\n",
-        "            growth_summaries.append(f\"{cty}: {growth_pct:.2f}%\")\n",
-        "        else:\n",
-        "            growth_summaries.append(f\"{cty}: N/A (no historical data)\")\n",
-        "\n",
-        "    growth_sentence = \" | \".join(growth_summaries)\n",
-        "    st.success(f\"Forecasted EV adoption growth over next 3 years — {growth_sentence}\")\n",
-        "\n",
-        "# === Footer ===\n",
-        "st.success(\"Forecast complete\")\n",
-        "st.markdown(\"Prepared for the **AICTE Internship Cycle 2 EV Vehicle Demand Prediction by SYED GALIB**\")"
-      ],
-      "metadata": {
-        "colab": {
-          "base_uri": "https://localhost:8080/"
-        },
-        "id": "ZPZCXtjZULdi",
-        "outputId": "2ac33a1b-42b2-4370-bebf-c3f3fc8494b4"
-      },
-      "execution_count": 50,
-      "outputs": [
-        {
-          "output_type": "stream",
-          "name": "stderr",
-          "text": [
-            "2025-08-03 14:10:50.027 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.082 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.083 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.084 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.085 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.086 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.087 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.088 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.090 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.091 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.093 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.165 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.166 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.167 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.168 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.169 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.170 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.171 No runtime found, using MemoryCacheStorageManager\n",
-            "2025-08-03 14:10:50.183 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.185 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.186 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.187 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.188 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.189 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:50.190 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.084 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.084 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.086 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.105 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.638 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.639 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.641 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.643 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.644 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.645 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.646 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.647 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.648 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.649 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.650 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.651 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.652 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.652 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.653 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.655 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.656 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.657 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.659 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.661 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.662 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.663 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.668 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n",
-            "2025-08-03 14:10:51.669 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.\n"
-          ]
-        },
-        {
-          "output_type": "execute_result",
-          "data": {
-            "text/plain": [
-              "DeltaGenerator()"
-            ]
-          },
-          "metadata": {},
-          "execution_count": 50
-        }
-      ]
-    },
-    {
-      "cell_type": "code",
-      "source": [
-        "!ngrok config add-authtoken 30lv8V8z2iJcqvzNkcuGh9gRBZy_5nisf7cgUbvMaHGFX3RBh"
-      ],
-      "metadata": {
-        "colab": {
-          "base_uri": "https://localhost:8080/"
-        },
-        "id": "Bn8HjLTP5mK1",
-        "outputId": "7dbb8335-bad5-4e41-dd6d-e5781ba68589"
-      },
-      "execution_count": 48,
-      "outputs": [
-        {
-          "output_type": "stream",
-          "name": "stdout",
-          "text": [
-            "Authtoken saved to configuration file: /root/.config/ngrok/ngrok.yml\n"
-          ]
-        }
-      ]
-    },
-    {
-      "cell_type": "code",
-      "source": [
-        "from pyngrok import ngrok\n",
-        "\n",
-        "# Kill old tunnels\n",
-        "ngrok.kill()\n",
-        "\n",
-        "# Run app.py\n",
-        "!streamlit run app.py &>/content/log.txt &\n",
-        "\n",
-        "# Expose port 8501 with proper protocol\n",
-        "public_url = ngrok.connect(8501, \"http\")\n",
-        "print(\"🚀 Streamlit app is live at:\", public_url)\n"
-      ],
-      "metadata": {
-        "colab": {
-          "base_uri": "https://localhost:8080/",
-          "height": 480
-        },
-        "id": "CSP0fDR06ZZk",
-        "outputId": "35b16d39-3654-4407-c87f-d625c333b065"
-      },
-      "execution_count": 49,
-      "outputs": [
-        {
-          "output_type": "stream",
-          "name": "stderr",
-          "text": [
-            "ERROR:pyngrok.process.ngrok:t=2025-08-03T14:07:59+0000 lvl=eror msg=\"failed to reconnect session\" obj=tunnels.session err=\"authentication failed: Your account is limited to 1 simultaneous ngrok agent sessions.\\nYou can run multiple simultaneous tunnels from a single agent session by defining the tunnels in your agent configuration file and starting them with the command `ngrok start --all`.\\nRead more about the agent configuration file: https://ngrok.com/docs/secure-tunnels/ngrok-agent/reference/config\\nYou can view your current agent sessions in the dashboard:\\nhttps://dashboard.ngrok.com/agents\\r\\n\\r\\nERR_NGROK_108\\r\\n\"\n",
-            "ERROR:pyngrok.process.ngrok:t=2025-08-03T14:07:59+0000 lvl=eror msg=\"session closing\" obj=tunnels.session err=\"authentication failed: Your account is limited to 1 simultaneous ngrok agent sessions.\\nYou can run multiple simultaneous tunnels from a single agent session by defining the tunnels in your agent configuration file and starting them with the command `ngrok start --all`.\\nRead more about the agent configuration file: https://ngrok.com/docs/secure-tunnels/ngrok-agent/reference/config\\nYou can view your current agent sessions in the dashboard:\\nhttps://dashboard.ngrok.com/agents\\r\\n\\r\\nERR_NGROK_108\\r\\n\"\n",
-            "ERROR:pyngrok.process.ngrok:t=2025-08-03T14:07:59+0000 lvl=eror msg=\"terminating with error\" obj=app err=\"authentication failed: Your account is limited to 1 simultaneous ngrok agent sessions.\\nYou can run multiple simultaneous tunnels from a single agent session by defining the tunnels in your agent configuration file and starting them with the command `ngrok start --all`.\\nRead more about the agent configuration file: https://ngrok.com/docs/secure-tunnels/ngrok-agent/reference/config\\nYou can view your current agent sessions in the dashboard:\\nhttps://dashboard.ngrok.com/agents\\r\\n\\r\\nERR_NGROK_108\\r\\n\"\n",
-            "CRITICAL:pyngrok.process.ngrok:t=2025-08-03T14:07:59+0000 lvl=crit msg=\"command failed\" err=\"authentication failed: Your account is limited to 1 simultaneous ngrok agent sessions.\\nYou can run multiple simultaneous tunnels from a single agent session by defining the tunnels in your agent configuration file and starting them with the command `ngrok start --all`.\\nRead more about the agent configuration file: https://ngrok.com/docs/secure-tunnels/ngrok-agent/reference/config\\nYou can view your current agent sessions in the dashboard:\\nhttps://dashboard.ngrok.com/agents\\r\\n\\r\\nERR_NGROK_108\\r\\n\"\n"
-          ]
-        },
-        {
-          "output_type": "error",
-          "ename": "PyngrokNgrokError",
-          "evalue": "The ngrok process errored on start: authentication failed: Your account is limited to 1 simultaneous ngrok agent sessions.\\nYou can run multiple simultaneous tunnels from a single agent session by defining the tunnels in your agent configuration file and starting them with the command `ngrok start --all`.\\nRead more about the agent configuration file: https://ngrok.com/docs/secure-tunnels/ngrok-agent/reference/config\\nYou can view your current agent sessions in the dashboard:\\nhttps://dashboard.ngrok.com/agents\\r\\n\\r\\nERR_NGROK_108\\r\\n.",
-          "traceback": [
-            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
-            "\u001b[0;31mPyngrokNgrokError\u001b[0m                         Traceback (most recent call last)",
-            "\u001b[0;32m/tmp/ipython-input-2628384355.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m      8\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      9\u001b[0m \u001b[0;31m# Expose port 8501 with proper protocol\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 10\u001b[0;31m \u001b[0mpublic_url\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mngrok\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mconnect\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;36m8501\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m\"http\"\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     11\u001b[0m \u001b[0mprint\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"🚀 Streamlit app is live at:\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpublic_url\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
-            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pyngrok/ngrok.py\u001b[0m in \u001b[0;36mconnect\u001b[0;34m(addr, proto, name, pyngrok_config, **options)\u001b[0m\n\u001b[1;32m    383\u001b[0m     \u001b[0mlogger\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0minfo\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34mf\"Opening tunnel named: {name}\"\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    384\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 385\u001b[0;31m     \u001b[0mapi_url\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mget_ngrok_process\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpyngrok_config\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mapi_url\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    386\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    387\u001b[0m     \u001b[0mlogger\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdebug\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34mf\"Creating tunnel with options: {options}\"\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
-            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pyngrok/ngrok.py\u001b[0m in \u001b[0;36mget_ngrok_process\u001b[0;34m(pyngrok_config)\u001b[0m\n\u001b[1;32m    201\u001b[0m     \u001b[0minstall_ngrok\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpyngrok_config\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    202\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 203\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0mprocess\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mget_process\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpyngrok_config\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    204\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    205\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
-            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pyngrok/process.py\u001b[0m in \u001b[0;36mget_process\u001b[0;34m(pyngrok_config)\u001b[0m\n\u001b[1;32m    269\u001b[0m         \u001b[0;32mreturn\u001b[0m \u001b[0m_current_processes\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mpyngrok_config\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mngrok_path\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    270\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 271\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0m_start_process\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpyngrok_config\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    272\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    273\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
-            "\u001b[0;32m/usr/local/lib/python3.11/dist-packages/pyngrok/process.py\u001b[0m in \u001b[0;36m_start_process\u001b[0;34m(pyngrok_config)\u001b[0m\n\u001b[1;32m    445\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    446\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mngrok_process\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstartup_error\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 447\u001b[0;31m             raise PyngrokNgrokError(f\"The ngrok process errored on start: {ngrok_process.startup_error}.\",\n\u001b[0m\u001b[1;32m    448\u001b[0m                                     \u001b[0mngrok_process\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlogs\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    449\u001b[0m                                     ngrok_process.startup_error)\n",
-            "\u001b[0;31mPyngrokNgrokError\u001b[0m: The ngrok process errored on start: authentication failed: Your account is limited to 1 simultaneous ngrok agent sessions.\\nYou can run multiple simultaneous tunnels from a single agent session by defining the tunnels in your agent configuration file and starting them with the command `ngrok start --all`.\\nRead more about the agent configuration file: https://ngrok.com/docs/secure-tunnels/ngrok-agent/reference/config\\nYou can view your current agent sessions in the dashboard:\\nhttps://dashboard.ngrok.com/agents\\r\\n\\r\\nERR_NGROK_108\\r\\n."
-          ]
-        }
-      ]
-    }
-  ]
-}
+
+    pred = model.predict(pd.DataFrame([new_row]))[0]
+    future_rows.append({"Date": forecast_date, "Predicted EV Total": round(pred)})
+
+    historical_ev.append(pred)
+    if len(historical_ev) > 6:
+        historical_ev.pop(0)
+
+    cumulative_ev.append(cumulative_ev[-1] + pred)
+    if len(cumulative_ev) > 6:
+        cumulative_ev.pop(0)
+
+# === Data Preparation for Visualization ===
+historical_cum = county_df[['Date', 'Electric Vehicle (EV) Total']].copy()
+historical_cum['Source'] = 'Historical'
+historical_cum['Cumulative EV'] = historical_cum['Electric Vehicle (EV) Total'].cumsum()
+
+forecast_df = pd.DataFrame(future_rows)
+forecast_df['Source'] = 'Forecast'
+forecast_df['Cumulative EV'] = forecast_df['Predicted EV Total'].cumsum() + historical_cum['Cumulative EV'].iloc[-1]
+
+combined = pd.concat([
+    historical_cum[['Date', 'Cumulative EV', 'Source']],
+    forecast_df[['Date', 'Cumulative EV', 'Source']]
+], ignore_index=True)
+
+# === Enhanced Visualization ===
+st.subheader(f"📊 Cumulative EV Forecast for {county} County")
+
+fig, ax = plt.subplots(figsize=(12, 6))
+colors = {'Historical': '#FFD700', 'Forecast': '#FF6B6B'}
+linewidths = {'Historical': 2, 'Forecast': 2}
+linestyles = {'Historical': '-', 'Forecast': '--'}
+
+for label, data in combined.groupby('Source'):
+    ax.plot(data['Date'], data['Cumulative EV'],
+           label=label,
+           color=colors[label],
+           linewidth=linewidths[label],
+           linestyle=linestyles[label],
+           marker='o',
+           markersize=4)
+
+ax.set_title(f"Cumulative EV Trend - {county} (3 Years Forecast)", fontsize=14, color='#2c5282')
+ax.set_xlabel("Date", color='#2c5282')
+ax.set_ylabel("Cumulative EV Count", color='#2c5282')
+ax.grid(True, alpha=0.3)
+ax.set_facecolor("#1c1c1c")
+fig.patch.set_facecolor('#2c3e50')
+ax.tick_params(colors='white')
+ax.legend()
+
+st.pyplot(fig)
+
+# === Results Display ===
+historical_total = historical_cum['Cumulative EV'].iloc[-1]
+forecasted_total = forecast_df['Cumulative EV'].iloc[-1]
+
+if historical_total > 0:
+    forecast_growth_pct = ((forecasted_total - historical_total) / historical_total) * 100
+    trend = "increase 📈" if forecast_growth_pct > 0 else "decrease 📉"
+    st.success(f"Based on the graph, EV adoption in **{county}** is expected to show a **{trend} of {forecast_growth_pct:.2f}%** over the next 3 years.")
+else:
+    st.warning("Historical EV total is zero, so percentage forecast change can't be computed.")
+
+# === Comparison Section ===
+st.markdown("---")
+st.header("Compare EV Adoption Trends for up to 3 Counties")
+
+multi_counties = st.multiselect("Select up to 3 counties to compare", county_list, max_selections=3)
+
+if multi_counties:
+    comparison_data = []
+
+    for cty in multi_counties:
+        cty_df = df[df['County'] == cty].sort_values("Date")
+        cty_code = cty_df['county_encoded'].iloc[0]
+
+        hist_ev = list(cty_df['Electric Vehicle (EV) Total'].values[-6:])
+        cum_ev = list(np.cumsum(hist_ev))
+        months_since = cty_df['months_since_start'].max()
+        last_date = cty_df['Date'].max()
+
+        future_rows_cty = []
+        for i in range(1, forecast_horizon + 1):
+            forecast_date = last_date + pd.DateOffset(months=i)
+            months_since += 1
+            lag1, lag2, lag3 = hist_ev[-1], hist_ev[-2], hist_ev[-3]
+            roll_mean = np.mean([lag1, lag2, lag3])
+            pct_change_1 = (lag1 - lag2) / lag2 if lag2 != 0 else 0
+            pct_change_3 = (lag1 - lag3) / lag3 if lag3 != 0 else 0
+            recent_cum = cum_ev[-6:]
+            ev_slope = np.polyfit(range(len(recent_cum)), recent_cum, 1)[0] if len(recent_cum) == 6 else 0
+
+            new_row = {
+                'months_since_start': months_since,
+                'county_encoded': cty_code,
+                'ev_total_lag1': lag1,
+                'ev_total_lag2': lag2,
+                'ev_total_lag3': lag3,
+                'ev_total_roll_mean_3': roll_mean,
+                'ev_total_pct_change_1': pct_change_1,
+                'ev_total_pct_change_3': pct_change_3,
+                'ev_growth_slope': ev_slope
+            }
+            pred = model.predict(pd.DataFrame([new_row]))[0]
+            future_rows_cty.append({"Date": forecast_date, "Predicted EV Total": round(pred)})
+
+            hist_ev.append(pred)
+            if len(hist_ev) > 6:
+                hist_ev.pop(0)
+
+            cum_ev.append(cum_ev[-1] + pred)
+            if len(cum_ev) > 6:
+                cum_ev.pop(0)
+
+        hist_cum = cty_df[['Date', 'Electric Vehicle (EV) Total']].copy()
+        hist_cum['Cumulative EV'] = hist_cum['Electric Vehicle (EV) Total'].cumsum()
+
+        fc_df = pd.DataFrame(future_rows_cty)
+        fc_df['Cumulative EV'] = fc_df['Predicted EV Total'].cumsum() + hist_cum['Cumulative EV'].iloc[-1]
+
+        combined_cty = pd.concat([
+            hist_cum[['Date', 'Cumulative EV']],
+            fc_df[['Date', 'Cumulative EV']]
+        ], ignore_index=True)
+
+        combined_cty['County'] = cty
+        comparison_data.append(combined_cty)
+
+    comp_df = pd.concat(comparison_data, ignore_index=True)
+
+    # === Enhanced Comparison Visualization ===
+    st.subheader("📈 Comparison of Cumulative EV Adoption Trends")
+    fig, ax = plt.subplots(figsize=(14, 7))
+    colors_list = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+
+    for i, (cty, group) in enumerate(comp_df.groupby('County')):
+        color = colors_list[i % len(colors_list)]
+        ax.plot(group['Date'], group['Cumulative EV'],
+               marker='o',
+               label=cty,
+               linewidth=2,
+               markersize=4,
+               color=color)
+
+    ax.set_title("EV Adoption Trends: Historical + 3-Year Forecast", fontsize=16, color='white')
+    ax.set_xlabel("Date", color='white')
+    ax.set_ylabel("Cumulative EV Count", color='white')
+    ax.grid(True, alpha=0.3)
+    ax.set_facecolor("#1c1c1c")
+    fig.patch.set_facecolor('#2c3e50')
+    ax.tick_params(colors='white')
+    ax.legend(title="County")
+    st.pyplot(fig)
+
+    # === Growth Summary ===
+    growth_summaries = []
+    for cty in multi_counties:
+        cty_df = comp_df[comp_df['County'] == cty].reset_index(drop=True)
+        historical_total = cty_df['Cumulative EV'].iloc[len(cty_df) - forecast_horizon - 1]
+        forecasted_total = cty_df['Cumulative EV'].iloc[-1]
+
+        if historical_total > 0:
+            growth_pct = ((forecasted_total - historical_total) / historical_total) * 100
+            growth_summaries.append(f"{cty}: {growth_pct:.2f}%")
+        else:
+            growth_summaries.append(f"{cty}: N/A (no historical data)")
+
+    growth_sentence = " | ".join(growth_summaries)
+    st.success(f"Forecasted EV adoption growth over next 3 years — {growth_sentence}")
+
+# === Footer ===
+st.success("Forecast complete")
+st.markdown("Prepared for the **AICTE Internship Cycle 2 EV Vehicle Demand Prediction by SYED GALIB**")
